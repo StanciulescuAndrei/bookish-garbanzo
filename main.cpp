@@ -28,7 +28,7 @@
 #include <CL/cl_gl.h>
 
 //OpenGL variables:
-int scaling = 5;
+int scaling = 1;
 GLuint texture;
 GLuint backTexture;
 GLfloat* textureBuffer = NULL;
@@ -51,6 +51,7 @@ cl_sampler sampler;
 cl_int res;
 size_t global_work_items[2], local_work_items[2];
 size_t num_workers, origin[3] = { 0, 0, 0 }, region[3] = { 0, 0, 1 };
+cl_mem clTexture;
 
 const char* GetErrorString(cl_int status)
 {
@@ -286,7 +287,7 @@ GLuint LoadShader(const char* vertex_path, const char* fragment_path) {
 void setupDisplayData(int WINDOW_WIDTH, int WINDOW_HEIGHT) {
 	//Texture setup:
 
-	glAllocateTexture(WINDOW_WIDTH / scaling, WINDOW_HEIGHT / scaling);
+	glAllocateTexture(WINDOW_WIDTH, WINDOW_HEIGHT);
 
 	//Generate quad coodrinates and buffers
 	float vertices[] = {
@@ -332,6 +333,9 @@ void prepareCLKernel(int textureWidth, int textureHeight)
 	SAFE_OCL_CALL(res);
 	dataBuffer = clCreateBuffer(context, CL_MEM_READ_WRITE, 16 * sizeof(float), NULL, &res);
 	SAFE_OCL_CALL(res);
+
+	/*clTexture = clCreateFromGLTexture(context, CL_MEM_READ_WRITE, GL_TEXTURE_2D, 0, texture, &res);
+	SAFE_OCL_CALL(res);*/
 
 	region[0] = global_work_items[0] = textureWidth;
 	region[1] = global_work_items[1] = textureHeight;
@@ -411,6 +415,8 @@ void setupOpenCLContext(int textureWidth, int textureHeight, cl_device_type dev_
 	cl_int status = CL_SUCCESS;
 
 	static cl_context_properties context_properties[] = { CL_CONTEXT_PLATFORM, 0,
+														  CL_GL_CONTEXT_KHR, (cl_context_properties)wglGetCurrentContext(),
+														  CL_WGL_HDC_KHR, (cl_context_properties)wglGetCurrentDC(),
 														  0 };
 
 	/*CL_GL_CONTEXT_KHR, (cl_context_properties)wglGetCurrentContext(),
@@ -525,14 +531,15 @@ int main(void)
 		return -1;
 	}
 
-	int WINDOW_HEIGHT = 800, WINDOW_WIDTH = 900;
+	int WINDOW_HEIGHT = 180, WINDOW_WIDTH = 200;
+	scaling = 5;
 
 	//Setup GLFW Window
 	GLFWwindow* glwindow = NULL;
-	setupGLFWWindow(&glwindow, WINDOW_WIDTH, WINDOW_HEIGHT);
+	setupGLFWWindow(&glwindow, WINDOW_WIDTH * scaling, WINDOW_HEIGHT * scaling);
 	setupDisplayData(WINDOW_WIDTH, WINDOW_HEIGHT);
 
-	setupOpenCLContext(WINDOW_WIDTH / scaling, WINDOW_HEIGHT / scaling, CL_DEVICE_TYPE_GPU);
+	setupOpenCLContext(WINDOW_WIDTH, WINDOW_HEIGHT, CL_DEVICE_TYPE_GPU);
 	
 
 	glBindVertexArray(VAO);
@@ -541,10 +548,10 @@ int main(void)
 		frameStart = clock();
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		processTexture(WINDOW_WIDTH / scaling, WINDOW_HEIGHT / scaling);
+		processTexture(WINDOW_WIDTH, WINDOW_HEIGHT);
 
 		glBindTexture(GL_TEXTURE_2D, texture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, WINDOW_WIDTH / scaling, WINDOW_HEIGHT / scaling, 0, GL_LUMINANCE, GL_FLOAT, textureBuffer);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, WINDOW_WIDTH, WINDOW_HEIGHT, 0, GL_LUMINANCE, GL_FLOAT, textureBuffer);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
