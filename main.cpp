@@ -206,7 +206,7 @@ void glAllocateTexture(int textureWidth, int textureHeight) {
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, textureWidth, textureHeight, 0, GL_LUMINANCE, GL_FLOAT, textureBuffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, textureWidth, textureHeight, 0, GL_RED, GL_FLOAT, textureBuffer);
 	glGenerateMipmap(GL_TEXTURE_2D);
 }
 
@@ -325,7 +325,7 @@ void prepareCLKernel(int textureWidth, int textureHeight)
 {
 
 	//Allocate image memory buffers
-	cl_image_format format = { CL_LUMINANCE, CL_FLOAT };
+	cl_image_format format = { CL_R, CL_FLOAT };
 	cl_image_desc desc = { CL_MEM_OBJECT_IMAGE2D, textureWidth, textureHeight, 0, 0, 0, 0, 0, 0, NULL };
 	image = clCreateImage(context, CL_MEM_READ_WRITE, &format, &desc, NULL, &res);
 	SAFE_OCL_CALL(res);
@@ -334,8 +334,8 @@ void prepareCLKernel(int textureWidth, int textureHeight)
 	dataBuffer = clCreateBuffer(context, CL_MEM_READ_WRITE, 16 * sizeof(float), NULL, &res);
 	SAFE_OCL_CALL(res);
 
-	/*clTexture = clCreateFromGLTexture(context, CL_MEM_READ_WRITE, GL_TEXTURE_2D, 0, texture, &res);
-	SAFE_OCL_CALL(res);*/
+	clTexture = clCreateFromGLTexture(context, CL_MEM_READ_WRITE, GL_TEXTURE_2D, 0, texture, &res);
+	SAFE_OCL_CALL(res);
 
 	region[0] = global_work_items[0] = textureWidth;
 	region[1] = global_work_items[1] = textureHeight;
@@ -400,9 +400,11 @@ void prepareCLKernel(int textureWidth, int textureHeight)
 	SAFE_OCL_CALL(res);
 #pragma endregion loadKernel
 
-	res = clSetKernelArg(kernel, 0, sizeof(image), &image);
+	res = clSetKernelArg(kernel, 0, sizeof(clTexture), &clTexture);
 	SAFE_OCL_CALL(res);
-	res = clSetKernelArg(kernel, 1, sizeof(tempImage), &tempImage);
+	/*res = clSetKernelArg(kernel, 0, sizeof(image), &image);
+	SAFE_OCL_CALL(res);*/
+	res = clSetKernelArg(kernel, 1, sizeof(image), &image);
 	SAFE_OCL_CALL(res);
 	res = clSetKernelArg(kernel, 3, sizeof(sampler), &sampler);
 
@@ -493,14 +495,14 @@ void setupOpenCLContext(int textureWidth, int textureHeight, cl_device_type dev_
 	clGetDeviceInfo(device_id, CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &size_data, NULL);
 	printf("- Maximum device work group size: %lu"  "\n", size_data);
 
-	prepareCLKernel(textureWidth, textureHeight);
-
 }
 
 void processTexture(int textureWidth, int textureHeight) {
 	//Convert texture buffer to CL image
-	//glFinish();
-	res = clEnqueueWriteImage(command_queue, image, CL_FALSE, origin, region, 0, 0, textureBuffer, 0, NULL, NULL);
+	glFinish();
+	/*res = clEnqueueWriteImage(command_queue, image, CL_FALSE, origin, region, 0, 0, textureBuffer, 0, NULL, NULL);
+	SAFE_OCL_CALL(res);*/
+	res = clEnqueueAcquireGLObjects(command_queue, 1, &clTexture, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
 
 	//Setup data:
@@ -515,8 +517,15 @@ void processTexture(int textureWidth, int textureHeight) {
 	res = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_work_items, local_work_items, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
 
-	res = clEnqueueReadImage(command_queue, tempImage, CL_FALSE, origin, region, 0, 0, textureBuffer, 0, NULL, NULL);
+	/*res = clEnqueueReadImage(command_queue, tempImage, CL_FALSE, origin, region, 0, 0, textureBuffer, 0, NULL, NULL);
+	SAFE_OCL_CALL(res);*/
+
+	res = clEnqueueCopyImage(command_queue, image, clTexture, origin, origin, region, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
+
+	res = clEnqueueReleaseGLObjects(command_queue, 1, &clTexture, 0, NULL, NULL);
+	SAFE_OCL_CALL(res);
+
 	res = clFinish(command_queue);
 	SAFE_OCL_CALL(res);
 
@@ -537,9 +546,13 @@ int main(void)
 	//Setup GLFW Window
 	GLFWwindow* glwindow = NULL;
 	setupGLFWWindow(&glwindow, WINDOW_WIDTH * scaling, WINDOW_HEIGHT * scaling);
-	setupDisplayData(WINDOW_WIDTH, WINDOW_HEIGHT);
 
 	setupOpenCLContext(WINDOW_WIDTH, WINDOW_HEIGHT, CL_DEVICE_TYPE_GPU);
+
+	setupDisplayData(WINDOW_WIDTH, WINDOW_HEIGHT);
+
+	prepareCLKernel(WINDOW_WIDTH, WINDOW_HEIGHT);
+	
 	
 
 	glBindVertexArray(VAO);
@@ -551,7 +564,7 @@ int main(void)
 		processTexture(WINDOW_WIDTH, WINDOW_HEIGHT);
 
 		glBindTexture(GL_TEXTURE_2D, texture);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_LUMINANCE, WINDOW_WIDTH, WINDOW_HEIGHT, 0, GL_LUMINANCE, GL_FLOAT, textureBuffer);
+		//glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, WINDOW_WIDTH, WINDOW_HEIGHT, 0, GL_RED, GL_FLOAT, textureBuffer);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
