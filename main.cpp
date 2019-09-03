@@ -110,9 +110,9 @@ const char* GetErrorString(cl_int status)
 }
 
 //Simulation variables:
-float tempScaling = 1000;
+float tempScaling = 100000;
 float extTemp = 30;
-float sourceTemp = 900;
+float sourceTemp = 90000;
 volatile int sourceX = 80, sourceY = 100;
 
 void glfwErrorCallback(int error, const char* description) {
