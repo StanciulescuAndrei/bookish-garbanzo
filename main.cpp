@@ -44,14 +44,16 @@ cl_program program;
 cl_command_queue command_queue;
 cl_event event;
 cl_kernel kernel;
+
 cl_mem image;
-cl_mem tempImage;
 cl_mem dataBuffer;
+cl_mem clTexture;
+
 cl_sampler sampler;
 cl_int res;
 size_t global_work_items[2], local_work_items[2];
 size_t num_workers, origin[3] = { 0, 0, 0 }, region[3] = { 0, 0, 1 };
-cl_mem clTexture;
+
 
 const char* GetErrorString(cl_int status)
 {
@@ -208,6 +210,8 @@ void glAllocateTexture(int textureWidth, int textureHeight) {
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, textureWidth, textureHeight, 0, GL_RED, GL_FLOAT, textureBuffer);
 	glGenerateMipmap(GL_TEXTURE_2D);
+	glFinish();
+	free(textureBuffer);
 }
 
 std::string readFile(const char* filePath) {
@@ -329,11 +333,10 @@ void prepareCLKernel(int textureWidth, int textureHeight)
 	cl_image_desc desc = { CL_MEM_OBJECT_IMAGE2D, textureWidth, textureHeight, 0, 0, 0, 0, 0, 0, NULL };
 	image = clCreateImage(context, CL_MEM_READ_WRITE, &format, &desc, NULL, &res);
 	SAFE_OCL_CALL(res);
-	tempImage = clCreateImage(context, CL_MEM_READ_WRITE, &format, &desc, NULL, &res);
-	SAFE_OCL_CALL(res);
 	dataBuffer = clCreateBuffer(context, CL_MEM_READ_WRITE, 16 * sizeof(float), NULL, &res);
 	SAFE_OCL_CALL(res);
 
+	//Shared OpenGL- OpenCL texture
 	clTexture = clCreateFromGLTexture(context, CL_MEM_READ_WRITE, GL_TEXTURE_2D, 0, texture, &res);
 	SAFE_OCL_CALL(res);
 
@@ -421,9 +424,6 @@ void setupOpenCLContext(int textureWidth, int textureHeight, cl_device_type dev_
 														  CL_WGL_HDC_KHR, (cl_context_properties)wglGetCurrentDC(),
 														  0 };
 
-	/*CL_GL_CONTEXT_KHR, (cl_context_properties)wglGetCurrentContext(),
-	CL_WGL_HDC_KHR, (cl_context_properties)wglGetCurrentDC(),*/
-
 	clGetPlatformIDs(0, NULL, &num_platforms);
 	if (num_platforms == 0) {
 		printf("No OpenCL platforms found...\n");
@@ -500,8 +500,7 @@ void setupOpenCLContext(int textureWidth, int textureHeight, cl_device_type dev_
 void processTexture(int textureWidth, int textureHeight) {
 	//Convert texture buffer to CL image
 	glFinish();
-	/*res = clEnqueueWriteImage(command_queue, image, CL_FALSE, origin, region, 0, 0, textureBuffer, 0, NULL, NULL);
-	SAFE_OCL_CALL(res);*/
+
 	res = clEnqueueAcquireGLObjects(command_queue, 1, &clTexture, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
 
@@ -516,9 +515,6 @@ void processTexture(int textureWidth, int textureHeight) {
 	//Run kernel:
 	res = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_work_items, local_work_items, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
-
-	/*res = clEnqueueReadImage(command_queue, tempImage, CL_FALSE, origin, region, 0, 0, textureBuffer, 0, NULL, NULL);
-	SAFE_OCL_CALL(res);*/
 
 	res = clEnqueueCopyImage(command_queue, image, clTexture, origin, origin, region, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
@@ -564,12 +560,6 @@ int main(void)
 		processTexture(WINDOW_WIDTH, WINDOW_HEIGHT);
 
 		glBindTexture(GL_TEXTURE_2D, texture);
-		//glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, WINDOW_WIDTH, WINDOW_HEIGHT, 0, GL_RED, GL_FLOAT, textureBuffer);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glLoadIdentity();
 
 		glDrawArrays(GL_QUADS, 0, 4);
 
@@ -586,6 +576,15 @@ int main(void)
 
 	glDeleteVertexArrays(1, &VAO);
 	glDeleteBuffers(1, &VBO);
+	glDeleteTextures(1, &texture);
+
+	clReleaseCommandQueue(command_queue);
+	clReleaseMemObject(image);
+	clReleaseMemObject(clTexture);
+	clReleaseSampler(sampler);
+	clReleaseKernel(kernel);
+	clReleaseProgram(program);
+	clReleaseContext(context);
 
 	glfwDestroyWindow(glwindow);
 	glfwTerminate();
