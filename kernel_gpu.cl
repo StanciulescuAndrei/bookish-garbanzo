@@ -18,10 +18,10 @@ __kernel void ThermalPropagation(__read_only image2d_t input_image, __write_only
 	}
 
 	//Edge case
-	if(coords.x == 0 || coords.y == 0 || coords.x == width - 1 || coords.y == height - 1){
+	/*if(coords.x == 0 || coords.y == 0 || coords.x == width - 1 || coords.y == height - 1){
 		//write_imagef(output_image, coords, (float4)(extTemp, 0.0F, 0.0F, 0.0F));
 		return;
-	}
+	}*/
 
 	if(coords.x == sourceCoords.x && coords.y == sourceCoords.y){
 		write_imagef(output_image, coords, (float4)(sourceTemp, 0.0F, 0.0F, 0.0F));

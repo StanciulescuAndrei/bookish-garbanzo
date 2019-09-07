@@ -116,8 +116,10 @@ const char* GetErrorString(cl_int status)
 float extTemp = 0.003;
 float sourceTemp = 0.8;
 volatile int sourceX = 80, sourceY = 100;
+
 int gpuLines;
 int cpuLines;
+
 int WINDOW_HEIGHT = 180, WINDOW_WIDTH = 200;
 
 void glfwErrorCallback(int error, const char* description) {
@@ -622,9 +624,6 @@ void processTexture(int textureWidth, int textureHeight) {
 	float cpu_data[] = { textureWidth, cpuLines + 1, sourceTemp, extTemp, sourceX, sourceY - max(0, gpuLines - 1) };
 	float gpu_data[] = { textureWidth, gpuLines + 1, sourceTemp, extTemp, sourceX, sourceY };
 	float* buffer_offset_pointer = NULL;
-	
-	if (cpuLines == 0)
-		goto gpu_entry_point;
 
 	cpu_global_work_items[0] = textureWidth;
 	cpu_global_work_items[1] = cpuLines + 1;
@@ -661,10 +660,6 @@ void processTexture(int textureWidth, int textureHeight) {
 	res = clEnqueueNDRangeKernel(cpu_command_queue, cpu_kernel, 2, NULL, cpu_global_work_items, cpu_local_work_items, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
 
-gpu_entry_point:
-
-	if (gpuLines == 0)
-		goto gpu_exit_point;
 	//GPU Section:
 	//Convert texture buffer to CL image
 	glFinish();
@@ -700,9 +695,6 @@ gpu_entry_point:
 
 	res = clFinish(gpu_command_queue);
 	SAFE_OCL_CALL(res);
-	if (cpuLines == 0)
-		return;
-gpu_exit_point:
 
 	//Now re-upload the data processed by the CPU...
 	res = clEnqueueReadBuffer(cpu_command_queue, cpu_write_buffer, CL_TRUE, 0, sizeof(float) * textureWidth * (min(textureHeight, cpuLines + 1)), buffer_offset_pointer, 0, NULL, NULL);

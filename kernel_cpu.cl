@@ -1,3 +1,7 @@
+void inBounds(int x, int y, int width, int height){
+	return (x >=0 ) || (y >= 0) || (x < width) || (y < height);
+}
+
 
 __kernel void ThermalPropagation(__global float * input_image, __global float * output_image,__constant float * data){
     int width = data[0];
@@ -19,6 +23,14 @@ __kernel void ThermalPropagation(__global float * input_image, __global float * 
 
 	//Edge case
 	if(coords.x == 0 || coords.y == 0 || coords.x == width - 1 || coords.y == height - 1){
+		if(coords.x == 0)
+			output_image[coords.y * width + coords.x + 1] = extTemp;
+		else if(coords.y == 0)
+			output_image[(coords.y + 1) * width + coords.x] = extTemp;
+		else if(coords.x == width - 1)
+			output_image[coords.y * width + coords.x - 1] = extTemp;
+		else if(coords.y == height - 1)
+			output_image[(coords.y - 1) * width + coords.x] = extTemp;
 		//output_image[coords.y * width + coords.x] = extTemp;
 		return;
 	}
@@ -32,7 +44,7 @@ __kernel void ThermalPropagation(__global float * input_image, __global float * 
 	for(int dx = -1; dx < 2; dx++){
 		for(int dy = -1; dy < 2; dy++){
 			if(coords.x + dx == 0 || coords.y + dy == 0 || coords.x + dx == width - 1 || coords.y + dy == height - 1){
-				color += (extTemp * extTransfer);
+				color += (input_image[coords.x + dx + (coords.y + dy) * width] * extTransfer);
 				ratio += extTransfer;
 			}
 			else{
