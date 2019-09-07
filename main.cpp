@@ -120,7 +120,7 @@ volatile int sourceX = 80, sourceY = 100;
 
 int gpuLines;
 int cpuLines;
-int WINDOW_HEIGHT = 200, WINDOW_WIDTH = 300;
+int WINDOW_HEIGHT = 800, WINDOW_WIDTH = 900;
 
 void glfwErrorCallback(int error, const char* description) {
 	fprintf(stderr, "Error: %s\n", description);
@@ -624,12 +624,15 @@ void setupOpenCLContext(int textureWidth, int textureHeight, cl_device_type dev_
 }
 
 void processTexture(int textureWidth, int textureHeight) {
-	float cpu_data[] = { textureWidth, cpuLines + 1, sourceTemp, extTemp, sourceX, sourceY - max(0, gpuLines - 1) };
-	float gpu_data[] = { textureWidth, gpuLines + 1, sourceTemp, extTemp, sourceX, sourceY };
+	float cpu_data[] = { textureWidth, min(textureHeight, cpuLines + 1), sourceTemp, extTemp, sourceX, sourceY - max(0, gpuLines - 1) };
+	float gpu_data[] = { textureWidth, min(textureHeight, gpuLines + 1), sourceTemp, extTemp, sourceX, sourceY };
 	float* buffer_offset_pointer = NULL;
 
 	cpu_global_work_items[0] = textureWidth;
 	cpu_global_work_items[1] = cpuLines + 2;
+
+	if (cpuLines == 0)
+		goto gpu_entry;
 
 	//define and calibrate workgroup sizes
 	cpu_local_work_items[0] = cpu_local_work_items[1] = 64;
@@ -658,6 +661,9 @@ void processTexture(int textureWidth, int textureHeight) {
 	res = clEnqueueNDRangeKernel(cpu_command_queue, cpu_kernel, 2, NULL, cpu_global_work_items, cpu_local_work_items, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
 
+gpu_entry:
+	if (gpuLines == 0)
+		goto gpu_exit;
 	//GPU Section:
 	//Convert texture buffer to CL image
 	glFinish();
@@ -693,7 +699,9 @@ void processTexture(int textureWidth, int textureHeight) {
 
 	res = clFinish(gpu_command_queue);
 	SAFE_OCL_CALL(res);
-
+gpu_exit:
+	if (cpuLines == 0)
+		return;
 	//Now re-upload the data processed by the CPU...
 	res = clEnqueueReadBuffer(cpu_command_queue, cpu_write_buffer, CL_TRUE, 0, sizeof(float) * textureWidth * (min(textureHeight, cpuLines + 1)), buffer_offset_pointer, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
@@ -719,7 +727,7 @@ int main(void)
 	}
 
 	
-	scaling = 4;
+	scaling = 1;
 
 	//Setup GLFW Window
 	GLFWwindow* glwindow = NULL;
@@ -751,7 +759,7 @@ int main(void)
 
 		glfwSwapBuffers(glwindow);
 		glfwPollEvents();
-		std::cout << "Elapsed time: " << elapsed.count() << " s\n";
+		//std::cout << "Elapsed time: " << elapsed.count() << " s\n";
 
 	}
 
