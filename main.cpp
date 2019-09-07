@@ -19,6 +19,7 @@
 #include <vector>
 #include <iostream>
 #include <fstream>
+#include <chrono>
 
 #define PRINT_DEVICE_TYPE(type_str) { printf("- Device type: %s" "\n", (type_str)); break; }
 #define SAFE_OCL_CALL(call)			do { cl_int status = (call); if (status != CL_SUCCESS) { printf("Error calling \"%s\" (%s:%d): %s\n", #call, __FILE__, __LINE__, GetErrorString(status));} } while (0)
@@ -43,7 +44,7 @@ cl_device_id gpu_device_id, cpu_device_id;
 cl_context gpu_context, cpu_context;
 cl_program gpu_program, cpu_program;
 cl_command_queue gpu_command_queue, cpu_command_queue;
-cl_event event;
+cl_event gpu_event, cpu_event;
 cl_kernel gpu_kernel, cpu_kernel;
 
 cl_mem gpu_image, cpu_read_buffer;
@@ -119,8 +120,7 @@ volatile int sourceX = 80, sourceY = 100;
 
 int gpuLines;
 int cpuLines;
-
-int WINDOW_HEIGHT = 180, WINDOW_WIDTH = 200;
+int WINDOW_HEIGHT = 200, WINDOW_WIDTH = 300;
 
 void glfwErrorCallback(int error, const char* description) {
 	fprintf(stderr, "Error: %s\n", description);
@@ -393,7 +393,7 @@ void prepareGPUKernel(int textureWidth, int textureHeight)
 	gpu_sampler = clCreateSampler(gpu_context, CL_FALSE, CL_ADDRESS_CLAMP_TO_EDGE, CL_FILTER_NEAREST, &res);
 	SAFE_OCL_CALL(res);
 
-	gpu_command_queue = clCreateCommandQueue(gpu_context, gpu_device_id, 0, &res);
+	gpu_command_queue = clCreateCommandQueue(gpu_context, gpu_device_id, CL_QUEUE_PROFILING_ENABLE, &res);
 	SAFE_OCL_CALL(res);
 
 #pragma region loadKernel
@@ -463,8 +463,11 @@ void prepareCPUKernel(int textureWidth, int textureHeight) {
 	SAFE_OCL_CALL(res);
 	cpu_dataBuffer = clCreateBuffer(cpu_context, CL_MEM_READ_WRITE, 16 * sizeof(float), NULL, &res);
 	SAFE_OCL_CALL(res);
-
-	cpu_texture_buffer = new float[textureWidth * (textureHeight + 1) * 4];
+	cpu_texture_buffer = NULL;
+	cpu_texture_buffer = new float[textureWidth * (textureHeight) * 4];
+	if (cpu_texture_buffer == NULL) {
+		fprintf(stderr, "Could not allocate CPU texture buffer\n");
+	}
 
 	region[0] = cpu_global_work_items[0] = textureWidth;
 	region[1] = cpu_global_work_items[1] = textureHeight;
@@ -476,7 +479,7 @@ void prepareCPUKernel(int textureWidth, int textureHeight) {
 		cpu_global_work_items[i] = ((cpu_global_work_items[i] + cpu_local_work_items[i] - 1) / cpu_local_work_items[i]) * cpu_local_work_items[i];
 	}
 
-	cpu_command_queue = clCreateCommandQueue(cpu_context, cpu_device_id, 0, &res);
+	cpu_command_queue = clCreateCommandQueue(cpu_context, cpu_device_id, CL_QUEUE_PROFILING_ENABLE, &res);
 	SAFE_OCL_CALL(res);
 
 #pragma region loadKernel
@@ -639,11 +642,6 @@ void processTexture(int textureWidth, int textureHeight) {
 	glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_FLOAT, cpu_texture_buffer);
 	glFinish();
 	buffer_offset_pointer = cpu_texture_buffer + max(0, gpuLines - 1) * textureWidth;
-	//Process pixel data into red values:...
-	/*for (int i = 0; i < textureWidth * min(textureHeight, cpuLines + 1) * 4; i += 4) {
-		buffer_offset_pointer[i / 4] = buffer_offset_pointer[i];
-	}*/
-
 
 	//Write thermal data to input CPU buffer
 	res = clEnqueueWriteBuffer(cpu_command_queue, cpu_read_buffer, CL_FALSE, 0, sizeof(float) * textureWidth * (min(textureHeight, cpuLines + 1)), buffer_offset_pointer, 0, NULL, NULL);
@@ -721,7 +719,7 @@ int main(void)
 	}
 
 	
-	scaling = 5;
+	scaling = 4;
 
 	//Setup GLFW Window
 	GLFWwindow* glwindow = NULL;
@@ -744,15 +742,16 @@ int main(void)
 	while (!glfwWindowShouldClose(glwindow)) {
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, texture);
-
+		auto start = std::chrono::high_resolution_clock::now();
 		processTexture(WINDOW_WIDTH, WINDOW_HEIGHT);
-
-		glUniform1f(maxTempUniform, sourceTemp);
+		auto finish = std::chrono::high_resolution_clock::now();
+		std::chrono::duration<double> elapsed = finish - start;
 
 		glDrawArrays(GL_QUADS, 0, 4);
 
 		glfwSwapBuffers(glwindow);
 		glfwPollEvents();
+		std::cout << "Elapsed time: " << elapsed.count() << " s\n";
 
 	}
 
