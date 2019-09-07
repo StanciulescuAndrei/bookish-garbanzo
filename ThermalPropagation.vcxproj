@@ -230,11 +230,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="simulation.cpp" />
     <ClCompile Include="main.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="simulation.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="kernel.cl" />

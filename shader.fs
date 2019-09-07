@@ -5,15 +5,12 @@ in vec2 pixelCoords;
 out vec4 fragmentColor;
 
 uniform sampler2D temp;
-float maxTemp = 1000.0;
-float mid = maxTemp /2.0;
 
 void main()
 {
 	vec4 sample = texture(temp, pixelCoords);
 	vec3 color;
-	float value = sample.r;
-	float temperature = value * maxTemp;
+	float value = sample.r / maxTemp;
 
 	if(value < 0.2){
 		color.b = 0.5 + 2.5 * value;
