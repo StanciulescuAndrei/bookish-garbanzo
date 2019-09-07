@@ -464,7 +464,7 @@ void prepareCPUKernel(int textureWidth, int textureHeight) {
 	cpu_dataBuffer = clCreateBuffer(cpu_context, CL_MEM_READ_WRITE, 16 * sizeof(float), NULL, &res);
 	SAFE_OCL_CALL(res);
 
-	cpu_texture_buffer = new float[textureWidth * textureHeight * 4];
+	cpu_texture_buffer = new float[textureWidth * (textureHeight + 1) * 4];
 
 	region[0] = cpu_global_work_items[0] = textureWidth;
 	region[1] = cpu_global_work_items[1] = textureHeight;
@@ -626,7 +626,7 @@ void processTexture(int textureWidth, int textureHeight) {
 	float* buffer_offset_pointer = NULL;
 
 	cpu_global_work_items[0] = textureWidth;
-	cpu_global_work_items[1] = cpuLines + 1;
+	cpu_global_work_items[1] = cpuLines + 2;
 
 	//define and calibrate workgroup sizes
 	cpu_local_work_items[0] = cpu_local_work_items[1] = 64;
@@ -669,7 +669,7 @@ void processTexture(int textureWidth, int textureHeight) {
 
 	//Setup data:
 	gpu_global_work_items[0] = textureWidth;
-	gpu_global_work_items[1] = gpuLines + 1;
+	gpu_global_work_items[1] = gpuLines + 2;
 
 	//define and calibrate workgroup sizes
 	gpu_local_work_items[0] = gpu_local_work_items[1] = 16;
