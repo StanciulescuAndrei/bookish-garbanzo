@@ -26,7 +26,10 @@
     <None Include="shader.fs">
       <Filter>Source Files</Filter>
     </None>
-    <None Include="kernel.cl">
+    <None Include="kernel_gpu.cl">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="kernel_cpu.cl">
       <Filter>Source Files</Filter>
     </None>
   </ItemGroup>

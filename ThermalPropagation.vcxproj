@@ -233,7 +233,8 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="kernel.cl" />
+    <None Include="kernel_cpu.cl" />
+    <None Include="kernel_gpu.cl" />
     <None Include="shader.fs" />
     <None Include="shader.vs" />
   </ItemGroup>

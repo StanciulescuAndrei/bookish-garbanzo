@@ -6,22 +6,20 @@ __kernel void ThermalPropagation(__read_only image2d_t input_image, __write_only
     float extTemp = data[3];
 	int2 sourceCoords = (int2)(data[4], data[5]);
 	float ratio = 0.0F;
-	float extTransfer = 0.01F;
+	float extTransfer = 1.0F;
 
     int2 coords = (int2)(get_global_id(0), get_global_id(1));
 
     float4 color = (float4)(0.0F, 0.0F, 0.0F, 0.0F);
 	
-
     if ((coords.x >= width) || (coords.y >= height))
 	{
 		return;
 	}
 
-
 	//Edge case
 	if(coords.x == 0 || coords.y == 0 || coords.x == width - 1 || coords.y == height - 1){
-		write_imagef(output_image, coords, (float4)(extTemp, 0.0F, 0.0F, 0.0F));
+		//write_imagef(output_image, coords, (float4)(extTemp, 0.0F, 0.0F, 0.0F));
 		return;
 	}
 

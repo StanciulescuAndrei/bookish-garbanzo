@@ -46,13 +46,13 @@ cl_command_queue gpu_command_queue, cpu_command_queue;
 cl_event event;
 cl_kernel gpu_kernel, cpu_kernel;
 
-cl_mem gpu_image, cpu_image;
+cl_mem gpu_image, cpu_read_buffer;
 cl_mem gpu_dataBuffer, cpu_dataBuffer;
-cl_mem gpu_clTexture, cpu_clTexture;
+cl_mem gpu_clTexture, cpu_write_buffer;
 
 float* cpu_texture_buffer;
 
-cl_sampler gpu_sampler, cpu_sampler;
+cl_sampler gpu_sampler;
 cl_int res;
 size_t gpu_global_work_items[2], gpu_local_work_items[2], cpu_global_work_items[2], cpu_local_work_items[2];
 size_t num_workers, origin[3] = { 0, 0, 0 }, region[3] = { 0, 0, 1 };
@@ -116,6 +116,9 @@ const char* GetErrorString(cl_int status)
 float extTemp = 0.003;
 float sourceTemp = 0.8;
 volatile int sourceX = 80, sourceY = 100;
+int gpuLines;
+int cpuLines;
+int WINDOW_HEIGHT = 180, WINDOW_WIDTH = 200;
 
 void glfwErrorCallback(int error, const char* description) {
 	fprintf(stderr, "Error: %s\n", description);
@@ -137,6 +140,26 @@ void glfwKeyCallback(GLFWwindow* window, int key, int scancode, int action, int 
 	}
 	else if (key == GLFW_KEY_RIGHT && action == GLFW_PRESS) {
 		extTemp += 0.01;
+	}
+	else if (key == GLFW_KEY_C && action == GLFW_PRESS) {
+		cpuLines = min(WINDOW_HEIGHT, cpuLines + 1);
+		gpuLines = max(0, gpuLines - 1);
+		printf("GPU: %lf\tCPU: %lf\n", (float)gpuLines / WINDOW_HEIGHT, (float)cpuLines / WINDOW_HEIGHT);
+	}
+	else if (key == GLFW_KEY_G && action == GLFW_PRESS) {
+		gpuLines = min(WINDOW_HEIGHT, gpuLines + 1);
+		cpuLines = max(0, cpuLines - 1);
+		printf("GPU: %lf\tCPU: %lf\n", (float)gpuLines / WINDOW_HEIGHT, (float)cpuLines / WINDOW_HEIGHT);
+	}
+	else if (key == GLFW_KEY_Q && action == GLFW_PRESS) {
+		gpuLines = WINDOW_HEIGHT;
+		cpuLines = 0;
+		printf("GPU: %lf\tCPU: %lf\n", (float)gpuLines / WINDOW_HEIGHT, (float)cpuLines / WINDOW_HEIGHT);
+	}
+	else if (key == GLFW_KEY_E && action == GLFW_PRESS) {
+		gpuLines = 0;
+		cpuLines = WINDOW_HEIGHT;
+		printf("GPU: %lf\tCPU: %lf\n", (float)gpuLines / WINDOW_HEIGHT, (float)cpuLines / WINDOW_HEIGHT);
 	}
 }
 
@@ -378,7 +401,7 @@ void prepareGPUKernel(int textureWidth, int textureHeight)
 	char* file_source;
 	cl_int status;
 
-	fopen_s(&fileptr, "kernel.cl", "r");
+	fopen_s(&fileptr, "kernel_gpu.cl", "r");
 	if (fileptr == NULL) {
 		fprintf(stderr, "Error opening OpenCL source file...\n");
 		return;
@@ -431,16 +454,15 @@ void prepareGPUKernel(int textureWidth, int textureHeight)
 
 void prepareCPUKernel(int textureWidth, int textureHeight) {
 	//Allocate image memory buffers
-	cl_image_format format = { CL_R, CL_FLOAT };
-	cl_image_desc desc = { CL_MEM_OBJECT_IMAGE2D, textureWidth, textureHeight, 0, 0, 0, 0, 0, 0, NULL };
-	cpu_image = clCreateImage(cpu_context, CL_MEM_READ_WRITE, &format, &desc, NULL, &res);
+
+	cpu_read_buffer = clCreateBuffer(cpu_context, CL_MEM_READ_WRITE, textureWidth * textureHeight * sizeof(float), NULL, &res);
 	SAFE_OCL_CALL(res);
-	cpu_clTexture = clCreateImage(cpu_context, CL_MEM_READ_WRITE, &format, &desc, NULL, &res);
+	cpu_write_buffer = clCreateBuffer(cpu_context, CL_MEM_READ_WRITE, textureWidth * textureHeight * sizeof(float), NULL, &res);
 	SAFE_OCL_CALL(res);
 	cpu_dataBuffer = clCreateBuffer(cpu_context, CL_MEM_READ_WRITE, 16 * sizeof(float), NULL, &res);
 	SAFE_OCL_CALL(res);
 
-	cpu_texture_buffer = new float[textureWidth * textureHeight];
+	cpu_texture_buffer = new float[textureWidth * textureHeight * 4];
 
 	region[0] = cpu_global_work_items[0] = textureWidth;
 	region[1] = cpu_global_work_items[1] = textureHeight;
@@ -451,8 +473,6 @@ void prepareCPUKernel(int textureWidth, int textureHeight) {
 	{
 		cpu_global_work_items[i] = ((cpu_global_work_items[i] + cpu_local_work_items[i] - 1) / cpu_local_work_items[i]) * cpu_local_work_items[i];
 	}
-	cpu_sampler = clCreateSampler(cpu_context, CL_FALSE, CL_ADDRESS_CLAMP_TO_EDGE, CL_FILTER_NEAREST, &res);
-	SAFE_OCL_CALL(res);
 
 	cpu_command_queue = clCreateCommandQueue(cpu_context, cpu_device_id, 0, &res);
 	SAFE_OCL_CALL(res);
@@ -464,7 +484,7 @@ void prepareCPUKernel(int textureWidth, int textureHeight) {
 	char* file_source;
 	cl_int status;
 
-	fopen_s(&fileptr, "kernel.cl", "r");
+	fopen_s(&fileptr, "kernel_cpu.cl", "r");
 	if (fileptr == NULL) {
 		fprintf(stderr, "Error opening OpenCL source file...\n");
 		return;
@@ -505,11 +525,10 @@ void prepareCPUKernel(int textureWidth, int textureHeight) {
 	SAFE_OCL_CALL(res);
 #pragma endregion loadKernel
 
-	res = clSetKernelArg(cpu_kernel, 0, sizeof(cpu_clTexture), &cpu_clTexture);
+	res = clSetKernelArg(cpu_kernel, 0, sizeof(cpu_read_buffer), &cpu_read_buffer);
 	SAFE_OCL_CALL(res);
-	res = clSetKernelArg(cpu_kernel, 1, sizeof(cpu_image), &cpu_image);
+	res = clSetKernelArg(cpu_kernel, 1, sizeof(cpu_write_buffer), &cpu_write_buffer);
 	SAFE_OCL_CALL(res);
-	res = clSetKernelArg(cpu_kernel, 3, sizeof(cpu_sampler), &cpu_sampler);
 }
 
 void setupOpenCLContext(int textureWidth, int textureHeight, cl_device_type dev_type, cl_device_id * device_id, cl_context * context) {
@@ -600,24 +619,53 @@ void setupOpenCLContext(int textureWidth, int textureHeight, cl_device_type dev_
 }
 
 void processTexture(int textureWidth, int textureHeight) {
-	int gpuLines = textureHeight / 2;
-	int cpuLines = textureHeight / 2;
-	int cpuStartX = 0, cpuStartY = max(0, gpuLines - 1);
-	size_t cpu_region[] = { textureWidth, min(textureHeight, cpuLines + 1) , 1 };
+	float cpu_data[] = { textureWidth, cpuLines + 1, sourceTemp, extTemp, sourceX, sourceY - max(0, gpuLines - 1) };
+	float gpu_data[] = { textureWidth, gpuLines + 1, sourceTemp, extTemp, sourceX, sourceY };
+	float* buffer_offset_pointer = NULL;
 	
+	if (cpuLines == 0)
+		goto gpu_entry_point;
+
+	cpu_global_work_items[0] = textureWidth;
+	cpu_global_work_items[1] = cpuLines + 1;
+
+	//define and calibrate workgroup sizes
+	cpu_local_work_items[0] = cpu_local_work_items[1] = 64;
+	for (int i = 0; i < 2; ++i)
+	{
+		cpu_global_work_items[i] = ((cpu_global_work_items[i] + cpu_local_work_items[i] - 1) / cpu_local_work_items[i]) * cpu_local_work_items[i];
+	}
+
 	//CPU Section:
-	glReadPixels(cpuStartX, cpuStartY, textureWidth, cpuStartY + cpuLines, GL_RED, GL_FLOAT, cpu_texture_buffer);
-	clEnqueueWriteImage(cpu_command_queue, cpu_image, CL_FALSE, origin, cpu_region, 0, 0, cpu_texture_buffer, 0, NULL, NULL);
+	glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_FLOAT, cpu_texture_buffer);
+	glFinish();
+	buffer_offset_pointer = cpu_texture_buffer + max(0, gpuLines - 1) * textureWidth;
+	//Process pixel data into red values:...
+	/*for (int i = 0; i < textureWidth * min(textureHeight, cpuLines + 1) * 4; i += 4) {
+		buffer_offset_pointer[i / 4] = buffer_offset_pointer[i];
+	}*/
+
+
+	//Write thermal data to input CPU buffer
+	res = clEnqueueWriteBuffer(cpu_command_queue, cpu_read_buffer, CL_FALSE, 0, sizeof(float) * textureWidth * (min(textureHeight, cpuLines + 1)), buffer_offset_pointer, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
-	float cpu_data[] = { textureWidth, cpuLines + 1, sourceTemp, extTemp, sourceX, sourceY - gpuLines};
+
+	//CPU run parameters
+	
 	res = clEnqueueWriteBuffer(cpu_command_queue, cpu_dataBuffer, CL_FALSE, 0, sizeof(cpu_data), cpu_data, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
 	res = clSetKernelArg(cpu_kernel, 2, sizeof(cpu_dataBuffer), &cpu_dataBuffer);
 	SAFE_OCL_CALL(res);
+
+	//Run the CPU Kernel
 	res = clEnqueueNDRangeKernel(cpu_command_queue, cpu_kernel, 2, NULL, cpu_global_work_items, cpu_local_work_items, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
 
+gpu_entry_point:
 
+	if (gpuLines == 0)
+		goto gpu_exit_point;
+	//GPU Section:
 	//Convert texture buffer to CL image
 	glFinish();
 
@@ -625,12 +673,20 @@ void processTexture(int textureWidth, int textureHeight) {
 	SAFE_OCL_CALL(res);
 
 	//Setup data:
-	float gpu_data[] = {textureWidth, gpuLines + 1, sourceTemp, extTemp, sourceX, sourceY};
+	gpu_global_work_items[0] = textureWidth;
+	gpu_global_work_items[1] = gpuLines + 1;
+
+	//define and calibrate workgroup sizes
+	gpu_local_work_items[0] = gpu_local_work_items[1] = 16;
+	for (int i = 0; i < 2; ++i)
+	{
+		gpu_global_work_items[i] = ((gpu_global_work_items[i] + gpu_local_work_items[i] - 1) / gpu_local_work_items[i]) * gpu_local_work_items[i];
+	}
+	
 	res = clEnqueueWriteBuffer(gpu_command_queue, gpu_dataBuffer, CL_FALSE, 0, sizeof(gpu_data), gpu_data, 0, NULL, NULL);
 	SAFE_OCL_CALL(res);
 	res = clSetKernelArg(gpu_kernel, 2, sizeof(gpu_dataBuffer), &gpu_dataBuffer);
 	SAFE_OCL_CALL(res);
-
 	
 	//Run kernel:
 	res = clEnqueueNDRangeKernel(gpu_command_queue, gpu_kernel, 2, NULL, gpu_global_work_items, gpu_local_work_items, 0, NULL, NULL);
@@ -644,6 +700,22 @@ void processTexture(int textureWidth, int textureHeight) {
 
 	res = clFinish(gpu_command_queue);
 	SAFE_OCL_CALL(res);
+	if (cpuLines == 0)
+		return;
+gpu_exit_point:
+
+	//Now re-upload the data processed by the CPU...
+	res = clEnqueueReadBuffer(cpu_command_queue, cpu_write_buffer, CL_TRUE, 0, sizeof(float) * textureWidth * (min(textureHeight, cpuLines + 1)), buffer_offset_pointer, 0, NULL, NULL);
+	SAFE_OCL_CALL(res);
+	res = clFinish(cpu_command_queue);
+	SAFE_OCL_CALL(res);
+	if (gpuLines == 0) {
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, gpuLines, textureWidth, cpuLines, GL_RED, GL_FLOAT, (void*)(buffer_offset_pointer));//prima linie e de margine si nu trebuie pusa
+	}
+	else {
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, gpuLines, textureWidth, cpuLines, GL_RED, GL_FLOAT, (void*)(buffer_offset_pointer + textureWidth));//prima linie e de margine si nu trebuie pusa
+	}
+	
 
 }
 
@@ -656,7 +728,7 @@ int main(void)
 		return -1;
 	}
 
-	int WINDOW_HEIGHT = 180, WINDOW_WIDTH = 200;
+	
 	scaling = 5;
 
 	//Setup GLFW Window
@@ -671,30 +743,25 @@ int main(void)
 	prepareGPUKernel(WINDOW_WIDTH, WINDOW_HEIGHT);
 	prepareCPUKernel(WINDOW_WIDTH, WINDOW_HEIGHT);
 
-	fprintf(stdout, "Press any key to start the simulation...");
-	getchar();
+	/*fprintf(stdout, "Press any key to start the simulation...");
+	getchar();*/
 	
 	glBindVertexArray(VAO);
+	cpuLines = gpuLines = WINDOW_HEIGHT / 2;
 
 	while (!glfwWindowShouldClose(glwindow)) {
-		frameStart = clock();
 		glClear(GL_COLOR_BUFFER_BIT);
+		glBindTexture(GL_TEXTURE_2D, texture);
 
 		processTexture(WINDOW_WIDTH, WINDOW_HEIGHT);
 
 		glUniform1f(maxTempUniform, sourceTemp);
 
-		glBindTexture(GL_TEXTURE_2D, texture);
-
 		glDrawArrays(GL_QUADS, 0, 4);
-
-		frameStart = clock() - frameStart;
-		frameStart /= 1000;
 
 		glfwSwapBuffers(glwindow);
 		glfwPollEvents();
 
-		//fprintf(stdout, "Frame time: %f\tFPS: %f\n", frameStart, 1 / frameStart);
 	}
 
 	//Clean up GLFW
