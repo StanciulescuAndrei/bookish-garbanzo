@@ -29,13 +29,13 @@
 #include <CL/cl_gl.h>
 
 //OpenGL variables:
-int scaling = 1;
+int scaling = 4;
 GLuint texture;
 GLuint backTexture;
 GLfloat* textureBuffer = NULL;
 GLuint VBO, VAO;
 GLuint gl_program;
-GLint maxTempUniform;
+GLint uniformLocation;
 
 //OpenCL variables:
 cl_int err;
@@ -114,13 +114,13 @@ const char* GetErrorString(cl_int status)
 }
 
 //Simulation variables:
-float extTemp = 0.003;
-float sourceTemp = 0.8;
+float extTemp = 30.0;
+float sourceTemp = 5000.0;
 volatile int sourceX = 80, sourceY = 100;
 
 int gpuLines;
 int cpuLines;
-int WINDOW_HEIGHT = 800, WINDOW_WIDTH = 900;
+int WINDOW_HEIGHT = 200, WINDOW_WIDTH = 300;
 
 void glfwErrorCallback(int error, const char* description) {
 	fprintf(stderr, "Error: %s\n", description);
@@ -132,16 +132,16 @@ void glfwKeyCallback(GLFWwindow* window, int key, int scancode, int action, int 
 		glfwSetWindowShouldClose(window, GLFW_TRUE);
 	}
 	else if (key == GLFW_KEY_UP && action == GLFW_PRESS) {
-		sourceTemp += 0.01;
+		sourceTemp += 100;
 	}
 	else if (key == GLFW_KEY_DOWN && action == GLFW_PRESS) {
-		sourceTemp -= 0.01;
+		sourceTemp -= 100;
 	}
 	else if (key == GLFW_KEY_LEFT && action == GLFW_PRESS) {
-		extTemp -= 0.01;
+		extTemp -= 100;
 	}
 	else if (key == GLFW_KEY_RIGHT && action == GLFW_PRESS) {
-		extTemp += 0.01;
+		extTemp += 100;
 	}
 	else if (key == GLFW_KEY_C && action == GLFW_PRESS) {
 		cpuLines = min(WINDOW_HEIGHT, cpuLines + 1);
@@ -214,7 +214,7 @@ void setupGLFWWindow(GLFWwindow** window, int WINDOW_WIDTH, int WINDOW_HEIGHT) {
 	glfwSetMouseButtonCallback(*window, mouse_button_callback);
 
 	glfwGetFramebufferSize(*window, &WINDOW_WIDTH, &WINDOW_HEIGHT);
-	//glfwSwapInterval(1);
+	//glfwSwapInterval(-1);
 
 	//GL view settings
 	glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
@@ -360,10 +360,13 @@ void setupDisplayData(int WINDOW_WIDTH, int WINDOW_HEIGHT) {
 
 
 	//Load shaders and compile graphics pipeline
-	gl_program = LoadShader("C:\\Users\\Stanciu\\source\\repos\\ThermalPropagation\\shader.vs", "C:\\Users\\Stanciu\\source\\repos\\ThermalPropagation\\shader.fs");
+	gl_program = LoadShader("C:\\Users\\Stanciu\\source\\repos\\GPGPU\\shader.vs", "C:\\Users\\Stanciu\\source\\repos\\GPGPU\\shader.fs");
 	glUseProgram(gl_program);
 
-	maxTempUniform = glGetUniformLocation(gl_program, "maxTemp");
+	uniformLocation = glGetUniformLocation(gl_program, "tempRange");
+	if (uniformLocation == -1) {
+		fprintf(stderr, "Could not bind uniform variable...\n");
+	}
 }
 
 void prepareGPUKernel(int textureWidth, int textureHeight)
@@ -635,7 +638,7 @@ void processTexture(int textureWidth, int textureHeight) {
 		goto gpu_entry;
 
 	//define and calibrate workgroup sizes
-	cpu_local_work_items[0] = cpu_local_work_items[1] = 64;
+	cpu_local_work_items[0] = cpu_local_work_items[1] = 4;
 	for (int i = 0; i < 2; ++i)
 	{
 		cpu_global_work_items[i] = ((cpu_global_work_items[i] + cpu_local_work_items[i] - 1) / cpu_local_work_items[i]) * cpu_local_work_items[i];
@@ -726,9 +729,6 @@ int main(void)
 		return -1;
 	}
 
-	
-	scaling = 1;
-
 	//Setup GLFW Window
 	GLFWwindow* glwindow = NULL;
 	setupGLFWWindow(&glwindow, WINDOW_WIDTH * scaling, WINDOW_HEIGHT * scaling);
@@ -748,11 +748,16 @@ int main(void)
 	cpuLines = gpuLines = WINDOW_HEIGHT / 2;
 
 	while (!glfwWindowShouldClose(glwindow)) {
+
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindTexture(GL_TEXTURE_2D, texture);
+
 		auto start = std::chrono::high_resolution_clock::now();
 		processTexture(WINDOW_WIDTH, WINDOW_HEIGHT);
 		auto finish = std::chrono::high_resolution_clock::now();
+
+		glUniform2f(uniformLocation, extTemp, sourceTemp);
+
 		std::chrono::duration<double> elapsed = finish - start;
 
 		glDrawArrays(GL_QUADS, 0, 4);
@@ -769,13 +774,27 @@ int main(void)
 	glDeleteBuffers(1, &VBO);
 	glDeleteTextures(1, &texture);
 
+	//Clean up OpenCL
+
 	clReleaseCommandQueue(gpu_command_queue);
+	clReleaseCommandQueue(cpu_command_queue);
 	clReleaseMemObject(gpu_image);
+	clReleaseMemObject(cpu_read_buffer);
+	clReleaseMemObject(cpu_write_buffer);
 	clReleaseMemObject(gpu_clTexture);
 	clReleaseSampler(gpu_sampler);
 	clReleaseKernel(gpu_kernel);
+	clReleaseKernel(cpu_kernel);
 	clReleaseProgram(gpu_program);
+	clReleaseProgram(cpu_program);
 	clReleaseContext(gpu_context);
+	clReleaseContext(cpu_context);
+	clReleaseDevice(gpu_device_id);
+	clReleaseDevice(cpu_device_id);
+
+	if (cpu_texture_buffer != NULL) {
+		free(cpu_texture_buffer);
+	}
 
 	glfwDestroyWindow(glwindow);
 	glfwTerminate();

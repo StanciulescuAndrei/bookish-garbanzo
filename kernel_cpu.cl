@@ -10,7 +10,6 @@ __kernel void ThermalPropagation(__global float * input_image, __global float * 
     float extTemp = data[3];
 	int2 sourceCoords = (int2)(data[4], data[5]);
 	float ratio = 0.0F;
-	float extTransfer = 1.0F;
 
     int2 coords = (int2)(get_global_id(0), get_global_id(1));
 

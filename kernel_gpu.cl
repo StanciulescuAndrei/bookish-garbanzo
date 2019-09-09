@@ -6,7 +6,6 @@ __kernel void ThermalPropagation(__read_only image2d_t input_image, __write_only
     float extTemp = data[3];
 	int2 sourceCoords = (int2)(data[4], data[5]);
 	float ratio = 0.0F;
-	float extTransfer = 1.0F;
 
     int2 coords = (int2)(get_global_id(0), get_global_id(1));
 
@@ -25,14 +24,8 @@ __kernel void ThermalPropagation(__read_only image2d_t input_image, __write_only
 	//Point is inside the plate
 	for(int dx = -1; dx < 2; dx++){
 		for(int dy = -1; dy < 2; dy++){
-			if(coords.x + dx == 0 || coords.y + dy == 0 || coords.x + dx == width - 1 || coords.y + dy == height - 1){
-				color += (read_imagef(input_image, sampler, (int2)(coords.x + dx, coords.y + dy)) * extTransfer);
-				ratio += extTransfer;
-			}
-			else{
-				color += read_imagef(input_image, sampler, (int2)(coords.x + dx, coords.y + dy));
-				ratio += 1.0F;
-			}
+			color += read_imagef(input_image, sampler, (int2)(coords.x + dx, coords.y + dy));
+			ratio += 1.0F;
 		}
 	}
 	color /= ratio;
